@@ -556,8 +556,8 @@ def test_toxicity_heuristic_avoids_scientific_substring_false_positives():
 
 def test_upload_batch_has_per_file_count_and_total_caps():
     assert ingest.MAX_DOCUMENT_SIZE_BYTES == 25 * 1024 * 1024
-    assert ingest.MAX_UPLOAD_FILE_COUNT == 3
-    assert ingest.MAX_TOTAL_UPLOAD_SIZE_BYTES == 75 * 1024 * 1024
+    assert ingest.MAX_UPLOAD_FILE_COUNT == 5
+    assert ingest.MAX_TOTAL_UPLOAD_SIZE_BYTES == 125 * 1024 * 1024
 
 
 def test_provider_error_redacts_user_key_from_unclassified_errors():

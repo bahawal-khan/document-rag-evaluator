@@ -28,7 +28,7 @@ from core.lexical import LexicalIndex
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".markdown"}
 INDEX_BATCH_SIZE = 100
 MAX_DOCUMENT_SIZE_BYTES = 25 * 1024 * 1024
-MAX_UPLOAD_FILE_COUNT = 3
+MAX_UPLOAD_FILE_COUNT = max(1, int(os.getenv("MAX_UPLOAD_FILE_COUNT", "5") or 5))
 MAX_TOTAL_UPLOAD_SIZE_BYTES = MAX_DOCUMENT_SIZE_BYTES * MAX_UPLOAD_FILE_COUNT
 MAX_DOCX_XML_SIZE_BYTES = 100 * 1024 * 1024
 # A 25 MB file of unbroken text would otherwise become ~80,000 chunks (hours of CPU embedding).

@@ -20,6 +20,7 @@ from core.ingest import get_existing_collection
 from core.retriever import Retriever, RETRIEVER_REGISTRY
 from core.generator import format_llm_error
 from core.golden import (
+    MAX_GOLDEN_QUESTIONS,
     generate_golden_dataset,
     load_golden_dataset,
     save_golden_dataset,
@@ -209,7 +210,7 @@ with tab_dataset:
     col1, col2 = st.columns([1, 1])
 
     with col1:
-        n_questions = st.slider("How many questions to generate?", 1, 500, 25)
+        n_questions = st.slider("How many questions to generate?", 1, MAX_GOLDEN_QUESTIONS, 25)
         est_batches = -(-n_questions // 5)
         st.caption(
             f"≈ {est_batches} generation calls at five chunks per batch. "
@@ -414,7 +415,7 @@ with tab_retrieval:
         selected_k = st.slider(
             "K for retrieval metrics",
             min_value=1,
-            max_value=20,
+            max_value=30,
             value=min(10, max(1, retrieval_config["top_k"])),
             key=f"retrieval_compare_k_{workspace_id}",
         )

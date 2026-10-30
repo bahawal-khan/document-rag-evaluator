@@ -5,7 +5,7 @@ import os
 import threading
 import time
 
-MAX_CHAT_PER_MINUTE = max(1, int(os.getenv("MAX_CHAT_PER_MINUTE", "20") or 20))
+MAX_CHAT_PER_MINUTE = max(1, int(os.getenv("MAX_CHAT_PER_MINUTE", "40") or 40))
 _WINDOW_SECONDS = 60.0
 _IDLE_FORGET_SECONDS = 600.0
 _lock = threading.Lock()

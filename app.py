@@ -446,6 +446,13 @@ if question:
             st.stop()
         if is_out_of_scope(chunks):
             st.markdown(OUT_OF_SCOPE_MESSAGE)
+            _top = next((c for c in chunks if isinstance(c, dict)), None)
+            if _top and _top.get("rerank_score") is not None:
+                st.caption(
+                    f"Best passage relevance score: {float(_top['rerank_score']):.2f} "
+                    "(below the scope threshold). If your question is about the document, "
+                    "try rephrasing it with words from the document."
+                )
             st.session_state.messages.append({"role": "assistant", "content": OUT_OF_SCOPE_MESSAGE})
             trace_entry.update({
                 "cache_hit": False,

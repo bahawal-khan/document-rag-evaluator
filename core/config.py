@@ -61,7 +61,7 @@ RERANKER_MODEL = os.getenv(
     "cross-encoder/ms-marco-MiniLM-L-6-v2",
 )
 RERANKER_SCOPE_THRESHOLD = env_float(
-    "RERANKER_SCOPE_THRESHOLD", 0.0, minimum=-100.0, maximum=100.0
+    "RERANKER_SCOPE_THRESHOLD", -4.0, minimum=-100.0, maximum=100.0
 )
 CHUNK_SIZE = 300
 CHUNK_OVERLAP = 50

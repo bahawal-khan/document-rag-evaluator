@@ -31,6 +31,7 @@ Suite page — auto-generation is only the default/fallback.
 """
 
 import json
+import os
 import random
 import re
 import time
@@ -52,7 +53,7 @@ except ImportError:
 BATCH_SIZE = 5              # chunks per LLM call
 MAX_BATCH_RETRIES = 3       # retries per batch before giving up on it
 MAX_CONSECUTIVE_FAILED_BATCHES = 3   # stop a run that keeps failing
-MAX_GOLDEN_QUESTIONS = 500
+MAX_GOLDEN_QUESTIONS = int(os.getenv("MAX_GOLDEN_QUESTIONS", "1000") or 1000)
 DIFFICULTY_LEVELS = ["easy", "medium", "hard"]
 # Visible output is ~100 tokens per Q&A pair, but reasoning models also spend
 # completion tokens on hidden reasoning; too small a cap yields truncated JSON.

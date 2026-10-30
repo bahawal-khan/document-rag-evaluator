@@ -9,8 +9,9 @@ from core.embeddings import (
     DEFAULT_LOCAL_EMBEDDING_MODEL,
     EMBEDDING_MODELS,
 )
-from core.config import DATA_DIR, RERANKER_MODEL
+from core.config import DATA_DIR, LLM_PROVIDER, RERANKER_MODEL
 from core.cache import clear_cache
+from core.provider_info import provider_guide
 
 PROVIDERS = {
     "OpenAI": ("openai", "gpt-4o-mini"),
@@ -21,16 +22,22 @@ PROVIDERS = {
     "Ollama (local)": ("ollama", "qwen2.5:7b"),
 }
 MODELS = {
-    "openai": ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4o"],
-    "gemini": ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"],
-    "anthropic": ["claude-haiku-4-5", "claude-sonnet-4-6"],
-    "groq": ["openai/gpt-oss-20b", "openai/gpt-oss-120b", "llama-3.3-70b-versatile"],
+    "openai": ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4.1", "gpt-4o"],
+    "gemini": ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"],
+    "anthropic": ["claude-haiku-4-5", "claude-sonnet-4-6", "claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"],
+    "groq": [
+        "openai/gpt-oss-20b",
+        "openai/gpt-oss-120b",
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+        "qwen/qwen3-32b",
+    ],
     "openrouter": [
         "openai/gpt-4o-mini",
         "google/gemini-2.0-flash-001",
         "anthropic/claude-3.5-sonnet",
     ],
-    "ollama": ["qwen2.5:7b", "llama3.1:8b"],
+    "ollama": ["qwen2.5:7b", "llama3.1:8b", "llama3.2:3b", "mistral:7b", "gemma2:9b"],
 }
 CUSTOM_MODEL = "Enter a custom model ID"
 
@@ -67,7 +74,9 @@ def _role_settings(role: str) -> dict:
     provider_key = f"{role}_provider"
     model_key = f"{role}_model"
     api_key_name = f"{role}_api_key"
-    default_provider, default_model = PROVIDERS["Groq"]
+    default_provider, default_model = next(
+        (item for item in PROVIDERS.values() if item[0] == LLM_PROVIDER), PROVIDERS["Groq"]
+    )
     provider = st.session_state.get(provider_key, default_provider)
     provider_label = next(
         (label for label, item in PROVIDERS.items() if item[0] == provider),
@@ -132,6 +141,14 @@ def render_model_settings(container=None) -> None:
             )
             provider, recommended_model = PROVIDERS[selected_label]
             st.session_state[f"{role}_provider"] = provider
+            guide = provider_guide(provider)
+            if guide:
+                links = []
+                if guide["key_url"]:
+                    links.append(f"[Get an API key]({guide['key_url']})")
+                if guide["usage_url"]:
+                    links.append(f"[Check limits and usage]({guide['usage_url']})")
+                st.caption(" ".join([guide["summary"], guide["tip"]]) + ("  \n" + " · ".join(links) if links else ""))
             model_options = [*MODELS[provider], CUSTOM_MODEL]
             model_choice_key = f"{role}_model_choice"
             if model_choice_key not in st.session_state:
@@ -293,12 +310,12 @@ def render_retrieval_settings(container=None) -> None:
             key="retrieval_use_reranker",
             help="Adds a local scoring pass after retrieval. Its model is downloaded on first use.",
         )
-        st.slider("Results per query (K)", 1, 20, settings["top_k"], key="retrieval_top_k")
+        st.slider("Results per query (K)", 1, 30, settings["top_k"], key="retrieval_top_k")
         st.slider(
             "Candidate search depth",
             1,
-            100,
-            min(100, max(settings["top_k"], settings["candidate_k"])),
+            200,
+            min(200, max(settings["top_k"], settings["candidate_k"])),
             key="retrieval_candidate_k",
             help="Search this many candidates before reranking and returning K results.",
         )

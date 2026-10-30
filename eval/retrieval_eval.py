@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import math
+import os
 
 from core.retriever import RETRIEVER_REGISTRY
 from core.golden import validate_golden_dataset
 
 METRICS = ("Precision@K", "Recall@K", "MRR", "nDCG@K")
-MAX_RETRIEVAL_EVAL_QUESTIONS = 500
+MAX_RETRIEVAL_EVAL_QUESTIONS = int(os.getenv("MAX_RETRIEVAL_EVAL_QUESTIONS", "1000") or 1000)
 
 
 def _references(item: dict) -> dict:

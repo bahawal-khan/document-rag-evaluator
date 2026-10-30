@@ -9,6 +9,8 @@ import time
 import os
 import weakref
 
+from core.provider_info import provider_guide, provider_usage_hint
+
 # No arbitrary delay is added for paid providers. Operators on a free or
 # throttled tier can configure per-provider pacing, for example:
 # GROQ_MIN_INTERVAL_SECONDS=2.5
@@ -421,12 +423,13 @@ def plan_rate_limit_retry(
     ``QuotaExhaustedError`` when waiting cannot help: a billing or daily quota,
     or a required wait longer than ``RATE_LIMIT_MAX_WAIT_SECONDS``.
     """
-    name = (provider or "groq").title()
+    name = provider_guide(provider or "groq").get("label") or (provider or "groq").title()
     kind, explicit = classify_rate_limit(error)
     if kind == "billing":
         raise QuotaExhaustedError(
             f"{name} reports that the account has no usable quota or credit left."
             f"{_reset_hint(explicit)} Add credit or billing, or choose another provider or model."
+            f"{provider_usage_hint(provider)}"
         ) from (error if isinstance(error, BaseException) else None)
     wait = get_retry_wait(error, base_wait_seconds, attempt)
     if explicit is not None and explicit > RATE_LIMIT_MAX_WAIT_SECONDS:
@@ -434,12 +437,14 @@ def plan_rate_limit_retry(
             f"{name} rate limit needs a wait of more than {int(RATE_LIMIT_MAX_WAIT_SECONDS)}s, so the run was stopped "
             f"instead of waiting.{_reset_hint(explicit)} Daily limits reset on a rolling window; "
             "choose another model or provider, or retry later."
+            f"{provider_usage_hint(provider)}"
         ) from (error if isinstance(error, BaseException) else None)
     if attempt + 1 >= max_attempts:
         if kind == "daily":
             raise QuotaExhaustedError(
                 f"{name} daily quota appears to be exhausted.{_reset_hint(explicit)} "
                 "Choose another model or provider, or retry after the limit resets."
+                f"{provider_usage_hint(provider)}"
             ) from (error if isinstance(error, BaseException) else None)
         return None
     note_rate_limited(provider)
