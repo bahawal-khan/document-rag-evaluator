@@ -1,0 +1,38 @@
+# Secrets
+.env
+*.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+.streamlit/secrets.*.toml
+!.streamlit/secrets.toml.example
+*.zip
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Virtual env
+venv/
+.venv/
+env/
+node_modules/
+
+# Runtime data (user documents, indexes, caches, job results)
+data/
+chroma_db/
+traces/*.jsonl
+*.sqlite3
+*.log
+.deepeval/
+.deepeval_telemetry.txt
+
+# Uploaded papers (user-specific, don't ship in repo)
+papers/*.pdf
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
