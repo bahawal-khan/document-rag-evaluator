@@ -331,7 +331,9 @@ def _run_job(
                     progress_callback=report_progress,
                 )
 
-        set_cached_evaluation(evaluation_cache_file, cache_key, results)
+        if not results.get("run_notes"):
+            # An incomplete run (quota hit, errored metrics) must never be replayed from cache.
+            set_cached_evaluation(evaluation_cache_file, cache_key, results)
         _update_job(
             job_id,
             status="complete",

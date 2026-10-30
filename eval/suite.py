@@ -76,15 +76,21 @@ def run_selected_evaluations(
         # Nothing could be scored, so there is nothing useful to show.
         raise quota_error
     notes = []
+    errored = sum(item.get("errored", 0) for item in summary.values())
+    skipped = f" {errored} metric result(s) were skipped and are NOT included in the scores." if errored else ""
     if quota_error is not None:
         notes.append(
-            f"The run stopped early because of a provider quota limit: {quota_error} "
-            "Metrics shown cover only the questions scored before the limit."
+            "The run stopped early because the judge model's provider ran out of quota. "
+            f"Reason: {quota_error}{skipped} "
+            "What to do: choose another judge model or provider, or wait until the limit resets, "
+            "then run again. Answers already generated are cached and will not be paid for twice."
         )
-    errored = sum(item.get("errored", 0) for item in summary.values())
-    if errored and quota_error is None:
+    elif errored:
         notes.append(
-            f"{errored} metric evaluation(s) failed because of provider errors and are excluded from the averages."
+            f"{errored} metric result(s) failed and are NOT included in the scores. "
+            "Common reasons: a temporary rate limit, a judge answer that was not valid JSON, "
+            "or a network timeout. Metrics showing 'no data' were not scored. Run again, "
+            "or choose a more reliable judge model."
         )
     if notes:
         outputs["run_notes"] = notes

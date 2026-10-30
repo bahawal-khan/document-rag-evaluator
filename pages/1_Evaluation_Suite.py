@@ -78,6 +78,7 @@ def clear_saved_results():
         "quality_summary",
         "safety_content_summary",
         "scope_summary",
+        "run_notes",
         "eval_result_sample_count",
         f"retrieval_comparison_{workspace_id}",
     ):
@@ -701,7 +702,13 @@ with tab_run:
                         st.session_state["eval_result_sample_count"] = int(current_job.get("sample_count", 0) or 0)
                         st.session_state["eval_running"] = False
                         st.rerun()
-                    st.success("Evaluation complete. Results are ready in the **Results & Report** tab.")
+                    run_notes = (current_job.get("result") or {}).get("run_notes") or []
+                    if run_notes:
+                        st.warning("**Evaluation finished with problems.** Some scores are missing.")
+                        for note in run_notes:
+                            st.warning(note)
+                    else:
+                        st.success("Evaluation complete. Results are ready in the **Results & Report** tab.")
                 elif status == "failed":
                     st.session_state["eval_running"] = False
                     st.error(
@@ -730,11 +737,19 @@ with tab_results:
             "Use a larger reviewed dataset before making a deployment decision."
         )
 
+    for _note in st.session_state.get("run_notes", []) or []:
+        st.error(f"⚠️ Incomplete results: {_note}")
+
     def render_metric_table(summary: dict, title: str):
         st.subheader(title)
         rows = []
         for name, v in summary.items():
             if name.startswith("_"):
+                continue
+            if v["total"] == 0:
+                # Nothing was scored: show "no data", never a misleading 0.00.
+                rows.append({"Metric": name, "Avg Score": "—", "Pass Rate": "—",
+                             "Passed/Total": f"0/0 ({v.get('errored', 0)} errored)", "Status": "⚠️ no data"})
                 continue
             status = "✅" if v["average"] >= 0.75 else "❌"
             rows.append({"Metric": name, "Avg Score": f"{v['average']:.2f}", "Pass Rate": f"{v['pass_rate']*100:.0f}%",
@@ -806,6 +821,7 @@ with tab_results:
                     "passed": values["passed"],
                     "failed": values["failed"],
                     "total": values["total"],
+                    "errored": values.get("errored", 0),
                     "failure_reasons": values.get("failure_reasons", []),
                 }
             )
@@ -834,9 +850,11 @@ with tab_results:
             [
                 {"Metric": f"{row['section'].title()}: {row['metric']}", "Average score": row["average"]}
                 for row in metric_rows
+                if row["total"]  # metrics with no data would draw a misleading empty bar
             ]
         ).set_index("Metric")
-        st.bar_chart(chart_data, horizontal=True)
+        if not chart_data.empty:
+            st.bar_chart(chart_data, horizontal=True)
 
     st.subheader("⚡ Operational Metrics (from live chat usage)")
     om = compute_operational_metrics(workspace["traces"])
@@ -867,7 +885,7 @@ with tab_results:
             csv_buffer,
             fieldnames=[
                 "section", "metric", "average", "pass_rate", "passed", "failed",
-                "total", "label_coverage",
+                "total", "errored", "label_coverage",
             ],
         )
         csv_writer.writeheader()
