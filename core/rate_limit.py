@@ -372,7 +372,7 @@ class QuotaExhaustedError(RuntimeError):
 
 _BILLING_PATTERN = re.compile(
     r"insufficient[_ ]quota|exceeded your current quota|credit balance is too low|"
-    r"billing|payment required|\b402\b|out of credits|free[- ]models?[- ]per[- ]day",
+    r"payment required|\b402\b|out of credits|free[- ]models?[- ]per[- ]day",
     re.IGNORECASE,
 )
 _DAILY_PATTERN = re.compile(
