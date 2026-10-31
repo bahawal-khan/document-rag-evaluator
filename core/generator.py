@@ -185,7 +185,8 @@ def build_generator(
     )
 
 
-def is_out_of_scope(chunks) -> bool:
+def is_out_of_scope(chunks, threshold: float | None = None) -> bool:
+    """``threshold`` overrides the configured reranker scope threshold (see core/scope_calibration.py)."""
     if not chunks:
         return True
 
@@ -195,7 +196,8 @@ def is_out_of_scope(chunks) -> bool:
     best_chunk = next((chunk for chunk in chunks if isinstance(chunk, dict)), None)
     rerank_score = best_chunk.get("rerank_score") if best_chunk else None
     if rerank_score is not None:
-        return float(rerank_score) < RERANKER_SCOPE_THRESHOLD
+        limit = RERANKER_SCOPE_THRESHOLD if threshold is None else float(threshold)
+        return float(rerank_score) < limit
 
     # BM25 has no vector distance to compare with the dense scope threshold.
     # A returned lexical match is still passed through the grounded prompt,

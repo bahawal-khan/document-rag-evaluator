@@ -63,8 +63,8 @@ RERANKER_MODEL = os.getenv(
 RERANKER_SCOPE_THRESHOLD = env_float(
     "RERANKER_SCOPE_THRESHOLD", -4.0, minimum=-100.0, maximum=100.0
 )
-CHUNK_SIZE = 300
-CHUNK_OVERLAP = 50
+CHUNK_SIZE = int(env_float("CHUNK_SIZE", 300, minimum=100, maximum=4000))
+CHUNK_OVERLAP = int(env_float("CHUNK_OVERLAP", 50, minimum=0, maximum=1000))
 # Used only when the cross-encoder is unavailable; calibrate against the app's
 # own labeled in-scope and out-of-scope questions before changing this value.
 SCOPE_DISTANCE_THRESHOLD = env_float(

@@ -19,6 +19,7 @@ load_dotenv()
 from core.ingest import get_existing_collection
 from core.retriever import Retriever, RETRIEVER_REGISTRY
 from core.generator import format_llm_error
+from core.scope_calibration import calibrate_scope_threshold
 from core.golden import (
     MAX_GOLDEN_QUESTIONS,
     generate_golden_dataset,
@@ -494,6 +495,81 @@ with tab_retrieval:
                     "No dataset document references were available. Add source/page or relevant document IDs "
                     "to score retrieval metrics."
                 )
+
+with tab_retrieval:
+    st.divider()
+    st.subheader("🎯 Calibrate the scope check")
+    st.caption(
+        "The chat refuses questions whose best passage scores too low. Instead of guessing the cut-off, "
+        "measure it on your own document using the golden dataset questions and a few unrelated probes. "
+        "The result applies to chat answers in this session."
+    )
+    _active = st.session_state.get("scope_threshold")
+    st.caption(
+        f"Current scope threshold: {_active:.2f} (calibrated)" if _active is not None
+        else "Current scope threshold: default from settings."
+    )
+    _calib_data = load_golden_dataset(workspace["golden_dataset"])
+    if len(_calib_data) < 3:
+        st.info("Create a golden dataset with at least 3 questions first.")
+    elif st.button("Calibrate scope check", key=f"calibrate_scope_{workspace_id}"):
+        try:
+            _cfg = require_embedding_settings(methods=[get_retrieval_settings()["method"]])
+            if not _cfg["use_reranker"]:
+                raise ValueError("Turn on 'Rerank results with the local cross-encoder' in Search and embeddings first.")
+            _retr = Retriever(
+                chroma_dir=workspace["chroma"],
+                method=_cfg["method"],
+                embedding_provider=_cfg["embedding_provider"],
+                embedding_model=_cfg["embedding_model"],
+                api_key=_cfg["embedding_api_key"],
+                use_reranker=True,
+                reranker_model=_cfg["reranker_model"],
+                top_k=_cfg["top_k"],
+                candidate_k=_cfg["candidate_k"],
+            )
+            try:
+                with st.spinner("Scoring your questions and unrelated probes..."):
+                    _questions = [item["input"] for item in _calib_data[:100]]
+                    _in = _retr.retrieve_many(_questions, methods=[_cfg["method"]])[_cfg["method"]]
+                    _off = _retr.retrieve_many(list(OFF_TOPIC_PROBES), methods=[_cfg["method"]])[_cfg["method"]]
+            finally:
+                _retr.close()
+
+            def _best(result_lists):
+                values = []
+                for chunks in result_lists:
+                    scores = [c.get("rerank_score") for c in chunks if isinstance(c, dict) and c.get("rerank_score") is not None]
+                    if scores:
+                        values.append(max(scores))
+                return values
+
+            _in_scores, _off_scores = _best(_in), _best(_off)
+            if not _in_scores:
+                raise ValueError("The reranker returned no scores, so the scope check cannot be calibrated.")
+            st.session_state[f"scope_calibration_{workspace_id}"] = calibrate_scope_threshold(_in_scores, _off_scores)
+        except Exception as exc:
+            st.error(str(exc))
+    _calibration = st.session_state.get(f"scope_calibration_{workspace_id}")
+    if _calibration:
+        cc1, cc2, cc3 = st.columns(3)
+        cc1.metric("Suggested threshold", f"{_calibration['threshold']:.2f}")
+        cc2.metric("Your questions kept", f"{_calibration['in_scope_kept']*100:.0f}%")
+        cc3.metric(
+            "Unrelated probes blocked",
+            "—" if _calibration["off_topic_blocked"] is None else f"{_calibration['off_topic_blocked']*100:.0f}%",
+        )
+        if _calibration["separable"]:
+            st.success("Your questions and the unrelated probes separate cleanly, so this cut-off blocks off-topic questions.")
+        else:
+            st.warning(
+                "Some unrelated probes score as high as real questions, so the cut-off favours answering. "
+                "The answer prompt still declines questions the passages do not support."
+            )
+        if st.button("Use this threshold in chat", key=f"apply_scope_{workspace_id}"):
+            st.session_state["scope_threshold"] = _calibration["threshold"]
+            st.success("Applied. New chat questions use this threshold until the session ends.")
+
 
 # =====================================================================
 # TAB 3 — Run Evaluation

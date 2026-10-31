@@ -444,7 +444,7 @@ if question:
             })
             log_trace(trace_entry, workspace["traces"])
             st.stop()
-        if is_out_of_scope(chunks):
+        if is_out_of_scope(chunks, st.session_state.get("scope_threshold")):
             st.markdown(OUT_OF_SCOPE_MESSAGE)
             _top = next((c for c in chunks if isinstance(c, dict)), None)
             if _top and _top.get("rerank_score") is not None:
