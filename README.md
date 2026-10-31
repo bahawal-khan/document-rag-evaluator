@@ -7,7 +7,7 @@
 [![Live App](https://img.shields.io/badge/🚀_Live_App-Open-5b5bf0?style=for-the-badge)](https://document-rag-evaluator.streamlit.app)
 [![Python](https://img.shields.io/badge/Python-3.12+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io/)
-[![Tests](https://img.shields.io/badge/tests-130_passing-2ea44f?style=for-the-badge)](#-run-the-tests)
+[![Tests](https://img.shields.io/badge/tests-161_passing-2ea44f?style=for-the-badge)](#-run-the-tests)
 
 **[👉 Try it live: document-rag-evaluator.streamlit.app](https://document-rag-evaluator.streamlit.app)**
 
@@ -32,6 +32,10 @@ Bring your own API key — it lives only in your browser session and is never sa
 | 📊 | **Evaluation Suite** built on DeepEval: retrieval, answer quality, safety, scope |
 | 🧪 | **Golden dataset generator**: creates test questions from your own documents |
 | ⚡ | **Free or paid keys**: pacing profiles, *Fast mode*, honest progress bar and cost estimate |
+| 🎛️ | **Tunable retrieval**: set chunk size, overlap, results per query and answer length; the answer context sizes itself to match |
+| 🎯 | **Scope calibration**: measure the off-topic cut-off on your own document instead of guessing |
+| 📑 | **Partial-credit reports**: PDF works with whatever evaluation groups you ran, and shows "no data" instead of fake zeros |
+| 🔑 | **Optional Google sign-in** (Streamlit's built-in login) |
 | 👥 | **Many users at once**: each visitor gets an isolated workspace, queue and rate limits |
 | 🔒 | **Hardened**: upload limits, XML-bomb protection, no remote images in answers |
 
@@ -118,7 +122,7 @@ Optional settings live in [`.env.example`](.env.example) — copy it to `.env`.
 1. Push this repo to GitHub
 2. On [share.streamlit.io](https://share.streamlit.io) choose the repo, branch `main`, file `app.py`
 3. **Advanced settings** → Python **3.12 or 3.13**
-4. **Secrets** → `EVAL_MAX_WORKERS = "1"` (Cloud has ~2.7 GB RAM)
+4. *(Optional)* **Google sign-in**: add an `[auth]` section under **Secrets** as described in the [Streamlit login guide](https://docs.streamlit.io/develop/concepts/connections/authentication). Without it the app is open to everyone.
 
 ## ⚙️ Useful settings
 
@@ -126,7 +130,11 @@ Optional settings live in [`.env.example`](.env.example) — copy it to `.env`.
 |---|---|---|
 | `EVAL_MAX_WORKERS` | 2 | Evaluations running at once |
 | `MAX_WORKSPACES` | 300 | Maximum active visitor sessions |
-| `MAX_CHAT_PER_MINUTE` | 20 | Questions per visitor per minute |
+| `MAX_CHAT_PER_MINUTE` | 40 | Questions per visitor per minute |
+| `MAX_GOLDEN_QUESTIONS` | 1000 | Largest golden dataset |
+| `MAX_UPLOAD_FILE_COUNT` | 5 | Files per upload batch |
+| `CHUNK_SIZE` / `CHUNK_OVERLAP` | 300 / 50 | Default chunking (can also be set in the sidebar) |
+| `RERANKER_SCOPE_THRESHOLD` | -4.0 | Off-topic cut-off (calibrate it in the Evaluation Suite) |
 | `MAX_WORKSPACE_INDEX_MB` | 400 | Largest index one visitor can build |
 | `INGEST_MAX_CONCURRENT` | 2 | Visitors indexing at the same time |
 
@@ -141,8 +149,8 @@ pytest tests -q
 
 ```text
 app.py                  chat page
-pages/                  Evaluation Suite page
-core/                   retrieval, ingestion, providers, rate limits, jobs
+pages/                  Evaluation Suite and Privacy pages
+core/                   retrieval, ingestion, providers, rate limits, jobs, sign-in
 eval/                   DeepEval metrics and PDF report
 tests/                  automated tests
 ```
@@ -150,7 +158,8 @@ tests/                  automated tests
 ## ⚠️ Good to know
 
 - Your API key is kept **only in your browser session**.
-- Uploaded files are stored per visitor and **deleted after inactivity**.
+- Uploaded files are stored per visitor and **deleted after inactivity**; on free hosting they are also lost when the app restarts.
+- See the in-app **Privacy** page for what is stored.
 - Scores from a small question set are a *diagnostic*, not proof — use 20+ questions before trusting them.
 
 ## 📜 License
