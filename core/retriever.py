@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from pathlib import Path
 from typing import Callable
@@ -32,6 +33,7 @@ _RERANKERS = {}
 _RERANKER_ERRORS = set()
 _RRF_K = 60
 _MAX_QUERY_BATCH_SIZE = 32
+MAX_RETRIEVAL_REQUEST_QUESTIONS = int(os.getenv("MAX_RETRIEVAL_EVAL_QUESTIONS", "1000") or 1000)
 
 
 class RetrievalError(RuntimeError):
@@ -332,8 +334,10 @@ class Retriever:
             queries = [queries]
         if not isinstance(queries, (list, tuple)):
             raise ValueError("Retrieval queries must be supplied as a list of text values.")
-        if len(queries) > 500:
-            raise ValueError("A retrieval request can contain at most 500 questions.")
+        if len(queries) > MAX_RETRIEVAL_REQUEST_QUESTIONS:
+            raise ValueError(
+                f"A retrieval request can contain at most {MAX_RETRIEVAL_REQUEST_QUESTIONS} questions."
+            )
         clean_queries = []
         for query in queries or []:
             if not isinstance(query, str) or len(query) > 8000:
