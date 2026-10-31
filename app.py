@@ -35,6 +35,8 @@ from core.ingest import (
     MAX_UPLOAD_FILE_COUNT,
     build_vectorstore,
     get_existing_collection,
+    MIN_CHUNK_SIZE,
+    MAX_CHUNK_SIZE,
 )
 from core.generator import (
     build_generator,
@@ -135,6 +137,33 @@ with st.sidebar:
         ),
     )
 
+    with st.expander("Chunking (how documents are split)"):
+        chunk_size = st.number_input(
+            "Chunk size (characters)",
+            min_value=MIN_CHUNK_SIZE,
+            max_value=MAX_CHUNK_SIZE,
+            value=int(st.session_state.get("indexed_chunking", (CHUNK_SIZE, CHUNK_OVERLAP))[0]),
+            step=50,
+            key="chunk_size_input",
+            help="Smaller chunks give precise, focused passages. Larger chunks keep more surrounding context.",
+        )
+        chunk_overlap = st.number_input(
+            "Chunk overlap (characters)",
+            min_value=0,
+            max_value=MAX_CHUNK_SIZE // 2,
+            value=int(st.session_state.get("indexed_chunking", (CHUNK_SIZE, CHUNK_OVERLAP))[1]),
+            step=10,
+            key="chunk_overlap_input",
+            help="Characters repeated between neighbouring chunks so a sentence is not cut off between them.",
+        )
+        st.caption(
+            "Applies to the next ingest. Ingesting a file again with new settings replaces its old chunks. "
+            "After changing it, generate the golden dataset again, because chunk references change."
+        )
+    chunking_invalid = chunk_overlap * 2 > chunk_size
+    if chunking_invalid:
+        st.warning("Chunk overlap must be at most half of the chunk size.")
+
     upload_count_exceeded = bool(uploaded and len(uploaded) > MAX_UPLOAD_FILE_COUNT)
     upload_size_exceeded = bool(
         uploaded and sum(uploaded_file.size for uploaded_file in uploaded) > MAX_TOTAL_UPLOAD_SIZE_BYTES
@@ -147,7 +176,7 @@ with st.sidebar:
     if st.button(
         "📥 Ingest Papers",
         width="stretch",
-        disabled=not uploaded or upload_count_exceeded or upload_size_exceeded,
+        disabled=not uploaded or upload_count_exceeded or upload_size_exceeded or chunking_invalid,
     ):
         upload_dir = workspace["uploads"]
         upload_dir.mkdir(parents=True, exist_ok=True)
@@ -187,7 +216,10 @@ with st.sidebar:
                     embedding_provider=embedding_settings["embedding_provider"],
                     embedding_model=embedding_settings["embedding_model"],
                     embedding_api_key=embedding_settings["embedding_api_key"],
+                    chunk_size=int(chunk_size),
+                    chunk_overlap=int(chunk_overlap),
                 )
+                st.session_state["indexed_chunking"] = (int(chunk_size), int(chunk_overlap))
                 retriever = get_session_retriever(
                     workspace["chroma"], workspace["root"].name, refresh=True
                 )
@@ -218,7 +250,8 @@ with st.sidebar:
         st.warning("No papers ingested yet")
     del existing
 
-    st.caption(f"Chunking: {CHUNK_SIZE} characters with {CHUNK_OVERLAP} overlap.")
+    _size, _overlap = st.session_state.get("indexed_chunking", (CHUNK_SIZE, CHUNK_OVERLAP))
+    st.caption(f"Chunking: {_size} characters with {_overlap} overlap.")
     confirm_clear = st.checkbox(
         "I want to permanently clear this session's files and results",
         key=f"confirm_clear_{workspace['root'].name}",

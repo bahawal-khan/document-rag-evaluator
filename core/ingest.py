@@ -33,15 +33,36 @@ MAX_TOTAL_UPLOAD_SIZE_BYTES = MAX_DOCUMENT_SIZE_BYTES * MAX_UPLOAD_FILE_COUNT
 MAX_DOCX_XML_SIZE_BYTES = 100 * 1024 * 1024
 # A 25 MB file of unbroken text would otherwise become ~80,000 chunks (hours of CPU embedding).
 MAX_CHUNKS_PER_DOCUMENT = int(os.getenv("MAX_CHUNKS_PER_DOCUMENT", "20000") or 20000)
-def _splitter():
+MIN_CHUNK_SIZE = 100
+MAX_CHUNK_SIZE = 4000
+LEGACY_CHUNKING = (300, 50)  # file ids for this setting stay unchanged so existing indexes keep working
+
+
+def normalize_chunk_settings(chunk_size=None, chunk_overlap=None) -> tuple[int, int]:
+    """Validate a chunk size/overlap pair; None means the configured default."""
+    size = CHUNK_SIZE if chunk_size is None else chunk_size
+    overlap = CHUNK_OVERLAP if chunk_overlap is None else chunk_overlap
+    try:
+        size, overlap = int(size), int(overlap)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Chunk size and overlap must be whole numbers.") from exc
+    if not MIN_CHUNK_SIZE <= size <= MAX_CHUNK_SIZE:
+        raise ValueError(f"Chunk size must be between {MIN_CHUNK_SIZE} and {MAX_CHUNK_SIZE} characters.")
+    if overlap < 0 or overlap * 2 > size:
+        raise ValueError("Chunk overlap must be zero or more and at most half of the chunk size.")
+    return size, overlap
+
+
+def _splitter(chunk_size=None, chunk_overlap=None):
     # Imported lazily: ``import langchain_text_splitters`` eagerly imports
     # sentence-transformers, transformers and torch (~6 s, ~800 MB), which the
     # chat page does not need until documents are actually indexed.
     from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+    chunk_size, chunk_overlap = normalize_chunk_settings(chunk_size, chunk_overlap)
     return RecursiveCharacterTextSplitter(
-        chunk_size=CHUNK_SIZE,
-        chunk_overlap=CHUNK_OVERLAP,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
         separators=["\n\n", "\n", ". ", " ", ""],
     )
 
@@ -106,8 +127,9 @@ def release_chroma_client(chroma_dir) -> None:
         _close_client(client)
 
 
-def _text_chunks(lines, source: str, location_prefix: str):
-    splitter = _splitter()
+def _text_chunks(lines, source: str, location_prefix: str, chunk_size=None, chunk_overlap=None):
+    chunk_size, chunk_overlap = normalize_chunk_settings(chunk_size, chunk_overlap)
+    splitter = _splitter(chunk_size, chunk_overlap)
     buffer = ""
     part_number = 0
     for line in lines:
@@ -115,7 +137,7 @@ def _text_chunks(lines, source: str, location_prefix: str):
         if not line:
             continue
         buffer = f"{buffer}\n{line}" if buffer else line
-        if len(buffer) >= CHUNK_SIZE * 4:
+        if len(buffer) >= chunk_size * 4:
             pieces = splitter.split_text(buffer)
             for piece in pieces[:-1]:
                 if len(piece.strip()) >= 30:
@@ -138,9 +160,11 @@ def _text_chunks(lines, source: str, location_prefix: str):
             }
 
 
-def _pdf_chunks(file_path: Path, file_name: str):
+def _pdf_chunks(file_path: Path, file_name: str, chunk_size=None, chunk_overlap=None):
     from pdfminer.pdfpage import PDFPage
     from pdfplumber.page import Page
+
+    splitter = _splitter(chunk_size, chunk_overlap)
 
     with pdfplumber.open(file_path) as pdf:
         doctop = 0
@@ -151,7 +175,7 @@ def _pdf_chunks(file_path: Path, file_name: str):
             page_height = page.height
             try:
                 text = (page.extract_text() or "").strip()
-                for chunk in _splitter().split_text(text) if text else []:
+                for chunk in splitter.split_text(text) if text else []:
                     if len(chunk.strip()) >= 30:
                         yield {
                             "text": chunk,
@@ -193,7 +217,7 @@ def _docx_lines(file_path: Path):
                 parents.pop()
 
 
-def iter_document_chunks(file_path, file_name: str | None = None):
+def iter_document_chunks(file_path, file_name: str | None = None, chunk_size=None, chunk_overlap=None):
     """Yield chunks without accumulating a document's extracted text in memory."""
     path = Path(file_path)
     source = Path(file_name or path.name).name
@@ -203,7 +227,7 @@ def iter_document_chunks(file_path, file_name: str | None = None):
 
     if suffix == ".pdf":
         try:
-            yield from _pdf_chunks(path, source)
+            yield from _pdf_chunks(path, source, chunk_size, chunk_overlap)
         except ValueError:
             raise
         except Exception as exc:
@@ -211,11 +235,11 @@ def iter_document_chunks(file_path, file_name: str | None = None):
                 f"{source}: this is not a valid or readable PDF ({type(exc).__name__})."
             ) from exc
     elif suffix == ".docx":
-        yield from _text_chunks(_docx_lines(path), source, "Chunk")
+        yield from _text_chunks(_docx_lines(path), source, "Chunk", chunk_size, chunk_overlap)
     else:
         with path.open("r", encoding="utf-8-sig", errors="replace") as document:
             blocks = iter(lambda: document.read(64 * 1024), "")
-            yield from _text_chunks(blocks, source, "Chunk")
+            yield from _text_chunks(blocks, source, "Chunk", chunk_size, chunk_overlap)
 
 
 def extract_pdf_chunks(file_path, file_name: str):
@@ -289,6 +313,8 @@ def _build_vectorstore(
     embedding_provider: str = DEFAULT_EMBEDDING_PROVIDER,
     embedding_model: str = DEFAULT_LOCAL_EMBEDDING_MODEL,
     embedding_api_key: str = "",
+    chunk_size: int | None = None,
+    chunk_overlap: int | None = None,
 ):
     """Incrementally upsert files; repeated uploads of the same content are idempotent.
 
@@ -299,6 +325,7 @@ def _build_vectorstore(
         raise ValueError("Uploaded documents must be supplied as a bounded list.")
     if not uploaded_files or len(uploaded_files) > MAX_UPLOAD_FILE_COUNT:
         raise ValueError(f"Upload between 1 and {MAX_UPLOAD_FILE_COUNT} documents per batch.")
+    chunk_size, chunk_overlap = normalize_chunk_settings(chunk_size, chunk_overlap)
     normalized_embedding = normalize_embedding_settings(
         embedding_provider,
         embedding_model,
@@ -348,6 +375,8 @@ def _build_vectorstore(
             lexical_index,
             embeddings,
             progress_callback,
+            chunk_size,
+            chunk_overlap,
         )
     finally:
         close_embedding_backend(embeddings)
@@ -357,7 +386,12 @@ def _build_vectorstore(
     return collection, total_chunks
 
 
-def _index_files(uploaded_files, collection, lexical_index, embeddings, progress_callback):
+def _index_files(
+    uploaded_files, collection, lexical_index, embeddings, progress_callback,
+    chunk_size=None, chunk_overlap=None,
+):
+    chunk_size, chunk_overlap = normalize_chunk_settings(chunk_size, chunk_overlap)
+    chunking_tag = "" if (chunk_size, chunk_overlap) == LEGACY_CHUNKING else f":c{chunk_size}o{chunk_overlap}"
     total_chunks = 0
     for file_name, file_path in uploaded_files:
         path = Path(file_path)
@@ -369,7 +403,7 @@ def _index_files(uploaded_files, collection, lexical_index, embeddings, progress
             raise ValueError(f"{file_name}: uploaded document is empty.")
         content_digest = _file_digest(path)
         file_id = hashlib.sha256(
-            f"{Path(file_name).name.casefold()}:{content_digest}".encode("utf-8")
+            f"{Path(file_name).name.casefold()}:{content_digest}{chunking_tag}".encode("utf-8")
         ).hexdigest()
         existing = collection.get(where={"file_id": file_id}, include=["metadatas"])
         known_ids = set(existing.get("ids") or [])
@@ -377,7 +411,7 @@ def _index_files(uploaded_files, collection, lexical_index, embeddings, progress
         batch = []
         chunk_index = 0
         try:
-            for chunk in iter_document_chunks(path, file_name):
+            for chunk in iter_document_chunks(path, file_name, chunk_size, chunk_overlap):
                 chunk_index += 1
                 if chunk_index > MAX_CHUNKS_PER_DOCUMENT:
                     raise ValueError(
