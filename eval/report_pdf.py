@@ -38,6 +38,10 @@ def _metric_table(data: dict, title: str, styles):
     for name, v in data.items():
         if name.startswith("_"):
             continue
+        if not v.get("total"):
+            rows.append([name, "—", "—", f"0/0 ({v.get('errored', 0)} errored)"])
+            row_colors.append(NO_DATA_COLOR)
+            continue
         passed_ok = v["average"] >= METRIC_THRESHOLD
         rows.append([name, f"{v['average']:.2f}", f"{v['pass_rate']*100:.0f}%", f"{v['passed']}/{v['total']}"])
         row_colors.append(PASS_COLOR if passed_ok else FAIL_COLOR)
@@ -66,7 +70,7 @@ def _failure_reasons_section(all_summaries: dict, styles):
     worst = []
     for level_name, summary in all_summaries.items():
         for metric_name, v in summary.items():
-            if metric_name.startswith("_") or not v.get("failure_reasons"):
+            if metric_name.startswith("_") or not isinstance(v, dict) or not v.get("failure_reasons"):
                 continue
             worst.append((v["average"], level_name, metric_name, v["failure_reasons"]))
     worst.sort(key=lambda x: x[0])  # lowest average first
@@ -92,7 +96,19 @@ def build_pdf_report(
     retriever_summary, generator_summary, pipeline_summary,
     quality_summary, safety_content_summary, scope_summary,
     operational_metrics,
+    run_notes=None,
 ) -> bytes:
+    """Build the PDF from whatever sections were run; sections that were not run say so."""
+    retriever_summary = retriever_summary or {}
+    generator_summary = generator_summary or {}
+    quality_summary = quality_summary or {}
+    safety_content_summary = safety_content_summary or {}
+    scope_summary = scope_summary or {}
+    pipeline_summary = pipeline_summary or {}
+    pipeline_summary.setdefault("metric_summary", {})
+    pipeline_summary.setdefault("fully_passed", 0)
+    pipeline_summary.setdefault("total_questions", 0)
+    pipeline_summary.setdefault("fully_passed_rate", 0)
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=2 * cm, bottomMargin=2 * cm)
     styles = getSampleStyleSheet()
@@ -102,6 +118,9 @@ def build_pdf_report(
     story.append(Paragraph("RAG Evaluation Report", styles["Title"]))
     story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}", styles["Normal"]))
     story.append(Spacer(1, 16))
+    for note in run_notes or []:
+        story.append(Paragraph(f"<b>Warning:</b> {_pdf_text(note)}", styles["Normal"]))
+        story.append(Spacer(1, 6))
 
     # ---- Executive summary ----
     story.append(Paragraph("Executive Summary", styles["Heading1"]))
@@ -112,10 +131,10 @@ def build_pdf_report(
         metric_scores = [
             value["average"]
             for name, value in avg_scores.items()
-            if not name.startswith("_")
+            if not name.startswith("_") and value.get("total")
         ]
         if not metric_scores:
-            return "NO DATA", NO_DATA_COLOR
+            return "NOT RUN / NO DATA", NO_DATA_COLOR
         ok = all(score >= METRIC_THRESHOLD for score in metric_scores)
         return ("PASS", PASS_COLOR) if ok else ("NEEDS ATTENTION", FAIL_COLOR)
 
@@ -158,8 +177,11 @@ def build_pdf_report(
 
     # ---- Component level ----
     story.append(Paragraph("1. Component-Level Evaluation", styles["Heading1"]))
-    story.extend(_metric_table(retriever_summary, "Retriever Metrics", styles))
-    story.extend(_metric_table(generator_summary, "Generator Metrics", styles))
+    if retriever_summary or generator_summary:
+        story.extend(_metric_table(retriever_summary, "Retriever Metrics", styles))
+        story.extend(_metric_table(generator_summary, "Generator Metrics", styles))
+    else:
+        story.append(Paragraph("Not run in this evaluation.", styles["Normal"]))
 
     # ---- Pipeline level ----
     story.append(Paragraph("2. Pipeline-Level Evaluation (RAG Triad)", styles["Heading1"]))
@@ -167,6 +189,18 @@ def build_pdf_report(
         f"Questions fully passing ALL metrics together: "
         f"{pipeline_summary['fully_passed']}/{pipeline_summary['total_questions']} "
         f"({pipeline_summary['fully_passed_rate']*100:.0f}%)", styles["Normal"]))
+    partial = pipeline_summary.get("partial")
+    if partial and partial.get("scored_questions"):
+        story.append(Paragraph(
+            f"Questions passing most metrics (75% or more): {partial['mostly_passed']}/{partial['scored_questions']} "
+            f"({partial['mostly_passed_rate']*100:.0f}%). Average metrics passed per question: "
+            f"{partial['avg_metrics_passed']:.1f}/{partial['avg_metrics_scored']:.1f}.", styles["Normal"]))
+        if partial.get("incomplete_questions"):
+            story.append(Paragraph(
+                f"{partial['incomplete_questions']} question(s) had a metric that could not be scored.",
+                styles["Normal"]))
+    if not pipeline_summary["metric_summary"]:
+        story.append(Paragraph("Not run in this evaluation.", styles["Normal"]))
     story.append(Spacer(1, 8))
     story.extend(_metric_table(pipeline_summary["metric_summary"], "Combined Metrics", styles))
 
@@ -199,9 +233,18 @@ def build_pdf_report(
 
     # ---- Application level ----
     story.append(Paragraph("3. Application-Level Evaluation", styles["Heading1"]))
-    story.extend(_metric_table(quality_summary, "Quality — Correctness & Completeness", styles))
-    story.extend(_metric_table(safety_content_summary, "Safety — Toxicity & PII Leakage", styles))
-    story.extend(_metric_table(scope_summary, "Safety — Scope Adherence", styles))
+    if not (quality_summary or safety_content_summary or scope_summary):
+        story.append(Paragraph("Not run in this evaluation.", styles["Normal"]))
+    for section_data, section_title in (
+        (quality_summary, "Quality — Correctness & Completeness"),
+        (safety_content_summary, "Safety — Toxicity & PII Leakage"),
+        (scope_summary, "Safety — Scope Adherence"),
+    ):
+        if any(not k.startswith("_") for k in section_data):
+            story.extend(_metric_table(section_data, section_title, styles))
+        else:
+            story.append(Paragraph(f"{_pdf_text(section_title)}: not run.", styles["Normal"]))
+            story.append(Spacer(1, 8))
     fast_rate = scope_summary.get("_fast_check_catch_rate")
     if fast_rate is not None:
         story.append(Paragraph(

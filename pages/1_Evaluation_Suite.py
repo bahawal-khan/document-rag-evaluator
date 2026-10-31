@@ -776,6 +776,27 @@ with tab_results:
         st.subheader("🔗 Pipeline-Level (RAG Triad)")
         st.metric("Questions passing ALL metrics", f"{ps['fully_passed']}/{ps['total_questions']}",
                    f"{ps['fully_passed_rate']*100:.0f}%")
+        st.caption(
+            "Strict view: a question counts only if every metric passes together, so one weak metric "
+            "can make this 0 even when the other metrics are fine. See partial credit below."
+        )
+        partial = ps.get("partial")
+        if partial and partial["scored_questions"]:
+            pc1, pc2 = st.columns(2)
+            pc1.metric(
+                "Questions passing most metrics (≥75%)",
+                f"{partial['mostly_passed']}/{partial['scored_questions']}",
+                f"{partial['mostly_passed_rate']*100:.0f}%",
+            )
+            pc2.metric(
+                "Average metrics passed per question",
+                f"{partial['avg_metrics_passed']:.1f}/{partial['avg_metrics_scored']:.1f}",
+            )
+            if partial["incomplete_questions"]:
+                st.warning(
+                    f"{partial['incomplete_questions']} question(s) had at least one metric that could not be "
+                    "scored (judge error or quota). They are counted as not fully passing."
+                )
 
         db = ps.get("difficulty_breakdown")
         if db:
@@ -942,17 +963,25 @@ with tab_results:
         if not isinstance(summary, dict)
         or not any(not name.startswith("_") for name in summary)
     ]
-    if all(k in st.session_state for k in required_keys) and not missing_report_sections:
-        pdf_bytes = build_pdf_report(
-            st.session_state["retriever_summary"], st.session_state["generator_summary"],
-            st.session_state["pipeline_summary"], st.session_state["quality_summary"],
-            st.session_state["safety_content_summary"], st.session_state["scope_summary"],
-            om,
-        )
-        st.download_button("📄 Download Full PDF Report", data=pdf_bytes, file_name="rag_evaluation_report.pdf", mime="application/pdf")
+    has_any_results = len(missing_report_sections) < len(required_metrics)
+    if has_any_results:
+        try:
+            pdf_bytes = build_pdf_report(
+                st.session_state.get("retriever_summary"), st.session_state.get("generator_summary"),
+                st.session_state.get("pipeline_summary"), st.session_state.get("quality_summary"),
+                st.session_state.get("safety_content_summary"), st.session_state.get("scope_summary"),
+                om,
+                run_notes=st.session_state.get("run_notes"),
+            )
+        except Exception as exc:  # a report problem must never break the results page
+            pdf_bytes = None
+            st.error(f"The PDF report could not be built ({type(exc).__name__}). JSON and CSV downloads still work.")
+        if pdf_bytes:
+            st.download_button("📄 Download PDF Report", data=pdf_bytes, file_name="rag_evaluation_report.pdf", mime="application/pdf")
+        if missing_report_sections:
+            st.caption(
+                "Not run yet (shown as 'not run' in the PDF): " + ", ".join(missing_report_sections) + ". "
+                "Run those groups too for a complete report."
+            )
     else:
-        missing_labels = ", ".join(missing_report_sections) if missing_report_sections else "all evaluation groups"
-        st.info(
-            f"The full PDF needs metric results for every section. Missing results: {missing_labels}. "
-            "Run the missing evaluation groups, then return here to download the report."
-        )
+        st.info("Run at least one evaluation group, then return here to download the PDF report.")
