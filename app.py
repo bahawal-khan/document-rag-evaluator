@@ -499,7 +499,9 @@ if question:
 
         # ---- 4. Build the token-budgeted prompt ----
         try:
-            prompt, used_chunks, input_tokens = build_prompt_within_budget(question, chunks)
+            prompt, used_chunks, input_tokens = build_prompt_within_budget(
+                question, chunks, retrieval_settings["max_input_tokens"]
+            )
         except ValueError as exc:
             st.warning(str(exc))
             st.session_state.messages.append({"role": "assistant", "content": str(exc)})
@@ -510,7 +512,7 @@ if question:
         # document index or ranking settings change, and makes reruns cheap.
         cache_parameters = {
             "temperature": 0.1,
-            "max_tokens": MAX_OUTPUT_TOKENS,
+            "max_tokens": retrieval_settings["max_output_tokens"],
             "prompt_fingerprint": PROMPT_FINGERPRINT,
             # Never fold the embedding API key into the cache key.
             "retrieval": {
@@ -552,6 +554,7 @@ if question:
                 model_name=model_settings["model"],
                 provider=model_settings["provider"],
                 api_key=model_settings["api_key"],
+                max_tokens=retrieval_settings["max_output_tokens"],
             )
         except Exception as e:
             st.error(str(e))

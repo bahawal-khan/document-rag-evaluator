@@ -285,6 +285,7 @@ def _run_job(
             model_name=answer_settings["model"],
             provider=answer_settings["provider"],
             api_key=answer_settings["api_key"],
+            max_tokens=retrieval_settings.get("max_output_tokens"),
         )
         judge = LLMJudge(
             model_name=judge_settings["model"],
@@ -311,6 +312,7 @@ def _run_job(
                 cache_file=workspace_root / "answer_cache.json",
                 progress_callback=report_progress,
                 include_reasons=options.get("include_reasons", True),
+                max_input_tokens=retrieval_settings.get("max_input_tokens"),
             )
             results.pop("raw_result", None)
 
@@ -329,6 +331,7 @@ def _run_job(
                     model_name=answer_settings["model"],
                     cache_file=workspace_root / "answer_cache.json",
                     progress_callback=report_progress,
+                    max_input_tokens=retrieval_settings.get("max_input_tokens"),
                 )
 
         if not results.get("run_notes"):
@@ -508,6 +511,15 @@ def submit_evaluation_job(
         raise ValueError("Retrieval result limits must be whole numbers.") from exc
     if not 1 <= top_k <= 100 or not top_k <= candidate_k <= 500:
         raise ValueError("Retrieval result limits are outside the supported range.")
+    try:
+        max_input_tokens = int(retrieval_settings.get("max_input_tokens") or 0) or None
+        max_output_tokens = int(retrieval_settings.get("max_output_tokens") or 0) or None
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Answer length limits must be whole numbers.") from exc
+    if max_input_tokens is not None and not 500 <= max_input_tokens <= 200000:
+        raise ValueError("The context budget is outside the supported range.")
+    if max_output_tokens is not None and not 50 <= max_output_tokens <= 32000:
+        raise ValueError("The answer length limit is outside the supported range.")
     reranker_model = str(
         retrieval_settings.get("reranker_model", RERANKER_MODEL) or RERANKER_MODEL
     ).strip()
@@ -522,6 +534,8 @@ def submit_evaluation_job(
         "reranker_model": reranker_model,
         "top_k": top_k,
         "candidate_k": candidate_k,
+        "max_input_tokens": max_input_tokens,
+        "max_output_tokens": max_output_tokens,
     }
     answer_settings, judge_settings = clean_settings
     with _workspace_lock:

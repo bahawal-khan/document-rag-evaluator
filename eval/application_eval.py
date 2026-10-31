@@ -105,6 +105,7 @@ def run_scope_adherence_eval(
     progress_callback=None,
     model_name: str = "",
     cache_file=None,
+    max_input_tokens: int | None = None,
 ):
     """Runs off-topic probes through the live pipeline (fast scope-check + generator)."""
     test_cases = []
@@ -116,7 +117,7 @@ def run_scope_adherence_eval(
             fast_check_catches += 1
             actual_output = OUT_OF_SCOPE_MESSAGE
         else:
-            prompt, _, _ = build_prompt_within_budget(probe, chunks)
+            prompt, _, _ = build_prompt_within_budget(probe, chunks, max_input_tokens)
             actual_output = generate_answer_sync(
                 llm,
                 prompt,

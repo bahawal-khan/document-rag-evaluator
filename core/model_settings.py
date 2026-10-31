@@ -9,7 +9,7 @@ from core.embeddings import (
     DEFAULT_LOCAL_EMBEDDING_MODEL,
     EMBEDDING_MODELS,
 )
-from core.config import DATA_DIR, LLM_PROVIDER, RERANKER_MODEL
+from core.config import CHUNK_OVERLAP, CHUNK_SIZE, DATA_DIR, LLM_PROVIDER, MAX_OUTPUT_TOKENS, RERANKER_MODEL
 from core.cache import clear_cache
 from core.provider_info import provider_guide
 
@@ -215,7 +215,20 @@ def get_retrieval_settings() -> dict:
         top_k,
         min(500, max(1, int(st.session_state.get("retrieval_candidate_k", 32)))),
     )
+    from core.generator import MAX_CONTEXT_BUDGET_TOKENS, MIN_CONTEXT_BUDGET_TOKENS, auto_input_budget
+
+    chunk_size = int(st.session_state.get("indexed_chunking", (CHUNK_SIZE, CHUNK_OVERLAP))[0])
+    if st.session_state.get("context_budget_auto", True):
+        max_input_tokens = auto_input_budget(top_k, chunk_size)
+    else:
+        max_input_tokens = max(
+            MIN_CONTEXT_BUDGET_TOKENS,
+            min(MAX_CONTEXT_BUDGET_TOKENS, int(st.session_state.get("context_budget_tokens", 4000))),
+        )
+    max_output_tokens = max(50, min(8000, int(st.session_state.get("answer_max_tokens", MAX_OUTPUT_TOKENS))))
     return {
+        "max_input_tokens": max_input_tokens,
+        "max_output_tokens": max_output_tokens,
         "method": method,
         "embedding_provider": provider,
         "embedding_model": str(st.session_state.get(
@@ -318,6 +331,34 @@ def render_retrieval_settings(container=None) -> None:
             min(200, max(settings["top_k"], settings["candidate_k"])),
             key="retrieval_candidate_k",
             help="Search this many candidates before reranking and returning K results.",
+        )
+        st.checkbox(
+            "Auto-size the answer context from K and chunk size",
+            value=True,
+            key="context_budget_auto",
+            help="The model only sees as many passages as fit in this budget. Auto makes K and chunk size take effect.",
+        )
+        if not st.session_state.get("context_budget_auto", True):
+            st.number_input(
+                "Context budget (tokens)",
+                min_value=1000,
+                max_value=60000,
+                value=4000,
+                step=500,
+                key="context_budget_tokens",
+                help="Maximum size of the prompt sent to the answer model. Passages that do not fit are dropped, lowest rank first.",
+            )
+        st.number_input(
+            "Max answer length (tokens)",
+            min_value=50,
+            max_value=8000,
+            value=MAX_OUTPUT_TOKENS,
+            step=50,
+            key="answer_max_tokens",
+            help="Longest answer the model may write. Too low cuts answers off.",
+        )
+        st.caption(
+            f"The answer model receives up to about {get_retrieval_settings()['max_input_tokens']:,} prompt tokens."
         )
 
 

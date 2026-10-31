@@ -169,10 +169,11 @@ def build_generator(
     model_name: str | None = None,
     provider: str | None = None,
     api_key: str | None = None,
+    max_tokens: int | None = None,
 ):
     extra = {
         "temperature": 0.1,
-        "max_tokens": MAX_OUTPUT_TOKENS,
+        "max_tokens": int(max_tokens) if max_tokens else MAX_OUTPUT_TOKENS,
         "streaming": streaming,
         "timeout": timeout if timeout is not None else HARD_REQUEST_DEADLINE_SECONDS + 2,
         "max_retries": 0,
@@ -222,7 +223,23 @@ def is_out_of_scope(chunks, threshold: float | None = None) -> bool:
     return min(distances) > SCOPE_DISTANCE_THRESHOLD
 
 
-def build_prompt_within_budget(question: str, chunks):
+MIN_CONTEXT_BUDGET_TOKENS = 1000
+MAX_CONTEXT_BUDGET_TOKENS = 60000
+
+
+def auto_input_budget(top_k: int, chunk_size: int) -> int:
+    """Prompt budget that really fits ``top_k`` chunks of ``chunk_size`` characters.
+
+    A fixed budget made the K and chunk-size settings silently ineffective: the
+    extra chunks were retrieved and then dropped before reaching the model.
+    """
+    per_chunk = count_tokens("x" * max(1, int(chunk_size))) + 30  # text plus its source label
+    system_tokens = count_tokens(SYSTEM_PROMPT)
+    budget = system_tokens + int(top_k) * per_chunk + 400  # 400 covers the question and template
+    return max(MAX_INPUT_TOKENS, min(MAX_CONTEXT_BUDGET_TOKENS, budget))
+
+
+def build_prompt_within_budget(question: str, chunks, max_input_tokens: int | None = None):
     """Fit the question and best available context in the estimated token budget.
 
     The character-based token estimate is approximate. Lower-ranked context is
@@ -231,6 +248,8 @@ def build_prompt_within_budget(question: str, chunks):
     """
     question = question or ""
     chunks = chunks or []
+    limit_tokens = int(max_input_tokens) if max_input_tokens else MAX_INPUT_TOKENS
+
     def retrieval_order(chunk):
         rerank_score = chunk.get("rerank_score")
         if rerank_score is not None:
@@ -256,7 +275,7 @@ def build_prompt_within_budget(question: str, chunks):
         return f"{SYSTEM_PROMPT}\n\nContext:\n{context_text}\n\nQuestion: {question}\n\nAnswer:"
 
     prompt = render_prompt([])
-    if count_tokens(prompt) > MAX_INPUT_TOKENS:
+    if count_tokens(prompt) > limit_tokens:
         raise ValueError(
             "This question is too long for the configured input budget. "
             "Please shorten it and try again."
@@ -265,7 +284,7 @@ def build_prompt_within_budget(question: str, chunks):
     used_chunks = []
     for chunk in sorted_chunks:
         candidate = {**chunk, "text": str(chunk.get("text") or "")}
-        if count_tokens(render_prompt([*used_chunks, candidate])) <= MAX_INPUT_TOKENS:
+        if count_tokens(render_prompt([*used_chunks, candidate])) <= limit_tokens:
             used_chunks.append(candidate)
             continue
 
@@ -276,7 +295,7 @@ def build_prompt_within_budget(question: str, chunks):
             while low < high:
                 middle = (low + high + 1) // 2
                 candidate_prefix = {**candidate, "text": candidate["text"][:middle]}
-                if count_tokens(render_prompt([candidate_prefix])) <= MAX_INPUT_TOKENS:
+                if count_tokens(render_prompt([candidate_prefix])) <= limit_tokens:
                     low = middle
                 else:
                     high = middle - 1

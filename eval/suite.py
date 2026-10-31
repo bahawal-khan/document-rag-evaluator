@@ -1,5 +1,7 @@
 """Orchestrate the selected evaluation metrics over one generated answer set."""
 
+from functools import partial
+
 from core.generator import build_prompt_within_budget
 from eval.application_eval import build_quality_metrics, build_safety_content_metrics
 from eval.common import build_test_cases, evaluate_test_cases, summarize_results
@@ -25,6 +27,7 @@ def run_selected_evaluations(
     cache_file=None,
     progress_callback=None,
     include_reasons: bool = True,
+    max_input_tokens: int | None = None,
 ):
     metrics = []
     if run_component:
@@ -37,12 +40,17 @@ def run_selected_evaluations(
     if not metrics:
         return {}
 
+    prompt_builder = (
+        partial(build_prompt_within_budget, max_input_tokens=max_input_tokens)
+        if max_input_tokens
+        else build_prompt_within_budget
+    )
     if answer_provider:
         test_cases = build_test_cases(
             golden_data,
             retriever,
             llm,
-            build_prompt_within_budget,
+            prompt_builder,
             provider=answer_provider,
             model_name=answer_model or "",
             cache_file=cache_file,
@@ -54,7 +62,7 @@ def run_selected_evaluations(
             golden_data,
             retriever,
             llm,
-            build_prompt_within_budget,
+            prompt_builder,
             **(
                 {
                     "progress_callback": progress_callback,

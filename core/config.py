@@ -72,15 +72,15 @@ SCOPE_DISTANCE_THRESHOLD = env_float(
 )
 
 # ---- Token / cost budget (live chat guardrails) ----
-MAX_INPUT_TOKENS = 1500     # system + retrieved context + question, combined
-MAX_OUTPUT_TOKENS = 650     # A stricter 500 caused incomplete answers that
+MAX_INPUT_TOKENS = int(env_float("MAX_INPUT_TOKENS", 1500, minimum=500, maximum=200000))  # minimum prompt budget: system + context + question
+MAX_OUTPUT_TOKENS = int(env_float("MAX_OUTPUT_TOKENS", 650, minimum=50, maximum=32000))  # default answer length; A stricter 500 caused incomplete answers that
                             # hurt Correctness/Completeness scores — this is
                             # a balance between latency and answer quality.
 
 # ---- Latency targets (seconds) ----
-P50_TARGET_SECONDS = 2.0
-P50_HARD_LIMIT_SECONDS = 2.5
-P99_HARD_LIMIT_SECONDS = 3.5
+P50_TARGET_SECONDS = env_float("P50_TARGET_SECONDS", 2.0, minimum=0.1)
+P50_HARD_LIMIT_SECONDS = env_float("P50_HARD_LIMIT_SECONDS", 2.5, minimum=0.1)
+P99_HARD_LIMIT_SECONDS = env_float("P99_HARD_LIMIT_SECONDS", 3.5, minimum=0.1)
 # If a single call takes longer than this, it's forcibly cut off (whatever
 # was generated so far is shown) — the deadline is enforced per request.
 # Raise it with HARD_REQUEST_DEADLINE_SECONDS for slower providers or models.
