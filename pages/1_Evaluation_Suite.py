@@ -60,6 +60,9 @@ from eval.report_pdf import build_pdf_report
 from eval.retrieval_eval import run_retrieval_comparison
 
 st.set_page_config(page_title="Evaluation Suite", page_icon="📊", layout="wide")
+from core.auth import require_login
+
+require_login()
 from core.ui import apply_responsive_styles, render_hero
 
 apply_responsive_styles()

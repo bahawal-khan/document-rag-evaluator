@@ -75,6 +75,9 @@ from core.workspace import WorkspaceLimitError, clear_workspace, get_workspace_p
 from core.evaluation_jobs import load_evaluation_job, delete_workspace_evaluation_jobs
 
 st.set_page_config(page_title="Document RAG Assistant", page_icon="📄", layout="wide")
+from core.auth import require_login
+
+require_login()
 try:
     workspace = get_workspace_paths()
 except WorkspaceLimitError as limit_error:
