@@ -7,7 +7,7 @@
 [![Live App](https://img.shields.io/badge/🚀_Live_App-Open-5b5bf0?style=for-the-badge)](https://document-rag-evaluator.streamlit.app)
 [![Python](https://img.shields.io/badge/Python-3.12+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io/)
-[![Tests](https://img.shields.io/badge/tests-161_passing-2ea44f?style=for-the-badge)](#-run-the-tests)
+[![Tests](https://img.shields.io/badge/tests-172_passing-2ea44f?style=for-the-badge)](#-run-the-tests)
 
 **[👉 Try it live: document-rag-evaluator.streamlit.app](https://document-rag-evaluator.streamlit.app)**
 
