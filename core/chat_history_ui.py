@@ -70,9 +70,18 @@ def render_chat_sidebar() -> None:
             _start_new_chat()
             st.rerun()
 
-        if "saved_chats" not in st.session_state:
-            st.session_state["saved_chats"] = chat_history.list_chats(key)
-        chats = st.session_state["saved_chats"]
+        if "saved_chats" in st.session_state:
+            chats = st.session_state["saved_chats"]
+        else:
+            chats = chat_history.list_chats(key)
+            if chat_history.last_error is None:  # do not cache a failed read as "no chats"
+                st.session_state["saved_chats"] = chats
+        if chat_history.last_error:
+            st.warning(
+                f"Chats cannot be saved right now: the database connection failed "
+                f"({chat_history.last_error}). Check `database_url` in the app Secrets "
+                "(password, Session pooler host), then reboot the app."
+            )
         active_id = st.session_state.get("active_chat_id")
         if not chats:
             st.caption("No saved chats yet. Your questions and answers are saved here automatically.")

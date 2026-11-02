@@ -120,6 +120,7 @@ def _record_failure(url: str, exc: Exception) -> None:
 
 def _run(work, fallback):
     """Run ``work(connection)`` and return its result, or ``fallback`` on any failure."""
+    global last_error
     url = database_url()
     if not url or _failed_until.get(url, 0.0) > time.monotonic():
         return fallback
@@ -131,7 +132,9 @@ def _run(work, fallback):
                 connection.execute(_SCHEMA)
                 with _lock:
                     _schema_ready_for.add(url)
-            return work(connection)
+            result = work(connection)
+            last_error = None
+            return result
     except Exception as exc:  # network, auth, driver: history must never break the chat
         _record_failure(url, exc)
         return fallback
