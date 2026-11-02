@@ -28,6 +28,10 @@ lives in a private workspace tied to your browser session.
 - **Your documents and results:** uploaded files, the search index built from them, your question set, answers
   and evaluation results are stored in your workspace so the app can work. Inactive workspaces are deleted
   automatically after about **{retention_days} days**, and you can clear your workspace yourself from the sidebar.
+- **Saved chats (signed-in users only, when enabled):** your questions, the answers and their source references
+  are saved to a private database so you can reopen earlier chats. They are stored under a one-way hash of your
+  email, not the address itself, and are visible only to you. You can delete any chat, or all of them, from the
+  **Saved chats** section in the sidebar. API keys are never saved.
 - **Usage traces:** the app records question timing and cost estimates for the operational report in your own
   workspace. These are not shared with other users.
 

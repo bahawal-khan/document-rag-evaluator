@@ -11,7 +11,7 @@ Live-path guardrails (all kept FAST, within the 2-2.5s latency budget):
 """
 
 import streamlit as st
-from core.rate_limit import bind_rate_limit_scope
+from core.rate_limit import RateLimiter, bind_rate_limit_scope
 from core.safe_markdown import neutralize_markdown, safe_stream
 from core.abuse import chat_allowed
 from pathlib import Path
@@ -76,8 +76,11 @@ from core.evaluation_jobs import load_evaluation_job, delete_workspace_evaluatio
 
 st.set_page_config(page_title="Document RAG Assistant", page_icon="📄", layout="wide")
 from core.auth import require_login
+from core.chat_history_ui import remember_message, render_chat_sidebar, setup_chat_history
+from core.followup import REWRITE_MAX_OUTPUT_TOKENS, history_for_rewrite, rewrite_followup
 
-require_login()
+signed_in_email = require_login()
+setup_chat_history(signed_in_email)
 try:
     workspace = get_workspace_paths()
 except WorkspaceLimitError as limit_error:
@@ -124,6 +127,7 @@ retriever = get_session_retriever(workspace["chroma"], workspace["root"].name)
 with st.sidebar:
     st.header("Workspace")
     st.caption("Your documents, dataset, cache, and traces are isolated to this browser session.")
+    render_chat_sidebar()
     render_model_settings(st.sidebar)
 
     st.divider()
@@ -273,6 +277,8 @@ with st.sidebar:
             "retriever",
             "retriever_workspace_id",
             "messages",
+            "active_chat_id",
+            "saved_chats",
             "retriever_summary",
             "generator_summary",
             "pipeline_summary",
@@ -409,7 +415,7 @@ if question:
         st.warning(f"You are sending questions too quickly. Please wait about {_wait} seconds.")
         st.stop()
     request_started = time.perf_counter()
-    st.session_state.messages.append({"role": "user", "content": question})
+    remember_message("user", question)
     with st.chat_message("user"):
         st.markdown(question)
 
@@ -423,7 +429,7 @@ if question:
             build_prompt_within_budget(question, [])
         except ValueError as exc:
             st.warning(str(exc))
-            st.session_state.messages.append({"role": "assistant", "content": str(exc)})
+            remember_message("assistant", str(exc))
             st.stop()
 
         # Toxic input checks run before cache lookup so old cache entries
@@ -431,7 +437,7 @@ if question:
         if check_toxicity(question):
             refusal = "Sorry, this question wasn't phrased appropriately. Please rephrase it professionally."
             st.markdown(refusal)
-            st.session_state.messages.append({"role": "assistant", "content": refusal})
+            remember_message("assistant", refusal)
             trace_entry.update({
                 "cache_hit": False,
                 "toxicity_blocked": True,
@@ -456,10 +462,45 @@ if question:
             st.error(str(exc))
             st.stop()
 
+        # ---- 2b. Follow-up questions: use the earlier turns of this chat ----
+        # The rewrite is only used for searching and answering; the chat keeps
+        # showing what the user typed. Any failure falls back to the original.
+        search_question = question
+        prior_messages = st.session_state.messages[:-1]
+        if st.session_state.get("chat_memory_on", True) and history_for_rewrite(prior_messages):
+            rewrite_model = None
+            try:
+                rewrite_settings = require_api_key("answer")
+                rewrite_model = build_generator(
+                    streaming=False,
+                    timeout=20,
+                    model_name=rewrite_settings["model"],
+                    provider=rewrite_settings["provider"],
+                    api_key=rewrite_settings["api_key"],
+                    max_tokens=REWRITE_MAX_OUTPUT_TOKENS,
+                )
+
+                def _invoke_rewrite(rewrite_prompt):
+                    with RateLimiter(provider=rewrite_settings["provider"]):
+                        return rewrite_model.invoke(rewrite_prompt)
+
+                with st.spinner("Reading your follow-up question in context..."):
+                    search_question = rewrite_followup(question, prior_messages, _invoke_rewrite)
+            except Exception:
+                search_question = question
+            finally:
+                from core.provider import close_chat_model
+
+                close_chat_model(rewrite_model)
+        followup_note = (
+            f"🔎 Searched for: {search_question}\n" if search_question != question else ""
+        )
+        trace_entry["followup_rewritten"] = search_question != question
+
         # ---- 3. Retrieve + scope check ----
         try:
             with st.spinner("Searching documents and reranking relevant passages..."):
-                chunks = retriever.retrieve(question)
+                chunks = retriever.retrieve(search_question)
             degraded = retriever.last_method_errors.get(retriever.method)
             if degraded and retriever.method == "hybrid" and chunks:
                 st.info(degraded)
@@ -489,7 +530,7 @@ if question:
                     "(below the scope threshold). If your question is about the document, "
                     "try rephrasing it with words from the document."
                 )
-            st.session_state.messages.append({"role": "assistant", "content": OUT_OF_SCOPE_MESSAGE})
+            remember_message("assistant", OUT_OF_SCOPE_MESSAGE)
             trace_entry.update({
                 "cache_hit": False,
                 "scope_blocked": True,
@@ -503,11 +544,11 @@ if question:
         # ---- 4. Build the token-budgeted prompt ----
         try:
             prompt, used_chunks, input_tokens = build_prompt_within_budget(
-                question, chunks, retrieval_settings["max_input_tokens"]
+                search_question, chunks, retrieval_settings["max_input_tokens"]
             )
         except ValueError as exc:
             st.warning(str(exc))
-            st.session_state.messages.append({"role": "assistant", "content": str(exc)})
+            remember_message("assistant", str(exc))
             st.stop()
 
         # ---- 5. Cache the complete grounded request (including context) ----
@@ -534,9 +575,9 @@ if question:
         )
         if is_usable_cache_entry(cached):
             st.markdown(neutralize_markdown(cached["answer"]))
-            meta = f"⚡ Cached • {cached.get('sources', '')}"
+            meta = f"{followup_note}⚡ Cached • {cached.get('sources', '')}"
             st.caption(neutralize_markdown(meta))
-            st.session_state.messages.append({"role": "assistant", "content": cached["answer"], "meta": meta})
+            remember_message("assistant", cached["answer"], meta)
             trace_entry.update({
                 "cache_hit": True,
                 "cache_latency_s": time.perf_counter() - request_started,
@@ -583,7 +624,7 @@ if question:
                 model_settings["api_key"],
             )
             st.error(friendly_error)
-            st.session_state.messages.append({"role": "assistant", "content": friendly_error})
+            remember_message("assistant", friendly_error)
             error_cost = estimate_cost(
                 input_tokens,
                 gen_metrics.get("output_tokens", 0),
@@ -632,10 +673,10 @@ if question:
             meta_parts.append(f"⚠️ PII flagged: {', '.join(pii_found)}")
         if gen_metrics.get("timed_out"):
             meta_parts.append("⏱️ cut off at time limit")
-        meta = " | ".join(meta_parts) + (f"\n📎 {sources}" if sources else "")
+        meta = followup_note + " | ".join(meta_parts) + (f"\n📎 {sources}" if sources else "")
         st.caption(neutralize_markdown(meta))
 
-        st.session_state.messages.append({"role": "assistant", "content": full_answer, "meta": meta})
+        remember_message("assistant", full_answer, meta)
 
         # ---- 7. Cache + trace ----
         if not gen_metrics.get("error") and not gen_metrics.get("timed_out"):

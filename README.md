@@ -36,6 +36,7 @@ Bring your own API key — it lives only in your browser session and is never sa
 | 🎯 | **Scope calibration**: measure the off-topic cut-off on your own document instead of guessing |
 | 📑 | **Partial-credit reports**: PDF works with whatever evaluation groups you ran, and shows "no data" instead of fake zeros |
 | 🔑 | **Optional Google sign-in** (Streamlit's built-in login) |
+| 💬 | **Chat memory**: follow-up questions are understood in context, and signed-in users can reopen saved chats (optional PostgreSQL database) |
 | 👥 | **Many users at once**: each visitor gets an isolated workspace, queue and rate limits |
 | 🔒 | **Hardened**: upload limits, XML-bomb protection, no remote images in answers |
 
@@ -123,6 +124,7 @@ Optional settings live in [`.env.example`](.env.example) — copy it to `.env`.
 2. On [share.streamlit.io](https://share.streamlit.io) choose the repo, branch `main`, file `app.py`
 3. **Advanced settings** → Python **3.12 or 3.13**
 4. *(Optional)* **Google sign-in**: add an `[auth]` section under **Secrets** as described in the [Streamlit login guide](https://docs.streamlit.io/develop/concepts/connections/authentication). Without it the app is open to everyone.
+5. *(Optional)* **Saved chats**: add a `[chat_history]` section with a `database_url` (any PostgreSQL, for example a free Supabase project, using its *Session pooler* connection string). It works together with sign-in; without it, chats last only for the current session.
 
 ## ⚙️ Useful settings
 
@@ -133,6 +135,7 @@ Optional settings live in [`.env.example`](.env.example) — copy it to `.env`.
 | `MAX_CHAT_PER_MINUTE` | 40 | Questions per visitor per minute |
 | `MAX_GOLDEN_QUESTIONS` | 1000 | Largest golden dataset |
 | `MAX_UPLOAD_FILE_COUNT` | 5 | Files per upload batch |
+| `MAX_SAVED_CHATS_PER_USER` | 50 | Saved chats kept per signed-in user |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | 300 / 50 | Default chunking (can also be set in the sidebar) |
 | `RERANKER_SCOPE_THRESHOLD` | -4.0 | Off-topic cut-off (calibrate it in the Evaluation Suite) |
 | `MAX_WORKSPACE_INDEX_MB` | 400 | Largest index one visitor can build |

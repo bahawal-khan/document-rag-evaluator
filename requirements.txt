@@ -5,6 +5,7 @@
 torch
 streamlit==1.64.0
 Authlib==1.9.1  # required by st.login (Google sign-in)
+psycopg[binary]==3.2.9  # optional saved chat history (PostgreSQL)
 langchain-groq==1.1.3
 langchain-openai==1.7.2
 langchain-google-genai==4.4.2
