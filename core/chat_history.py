@@ -56,6 +56,41 @@ _lock = threading.Lock()
 _schema_ready_for: set[str] = set()
 _failed_until: dict[str, float] = {}
 last_error: str | None = None
+last_error_hint: str = ""
+
+
+def describe_failure(exc: Exception) -> str:
+    """A short, safe explanation of a connection failure (never includes the URL or password)."""
+    text = str(exc).lower()
+    if "password authentication failed" in text:
+        return "The database password is wrong. Reset it in Supabase and update the URL."
+    if "tenant or user not found" in text:
+        return (
+            "The username or pooler host in the URL is wrong. Copy the Session pooler string "
+            "again from Supabase (Connect)."
+        )
+    if "servname not supported" in text:
+        return (
+            "The URL is malformed, usually because the password contains a special character such as /. "
+            "Encode it (/ as %2F, @ as %40, # as %23) or use a password of letters and numbers only."
+        )
+    if any(part in text for part in ("translate host", "name or service not known", "nodename nor servname", "getaddrinfo")):
+        return (
+            "The host name in the URL is not valid. Check that it ends in pooler.supabase.com. "
+            "This also happens when the password has special characters like @ or #: encode them "
+            "(@ as %40, # as %23) or use letters and numbers only."
+        )
+    if any(part in text for part in ("timeout", "timed out", "refused", "unreachable")):
+        return (
+            "The database could not be reached. Use the Session pooler string, "
+            "not the Direct connection one."
+        )
+    if any(part in text for part in ("invalid", "missing", "percent", "parse", "uri")):
+        return (
+            "The URL format is wrong. If the password has special characters, encode them "
+            "(for example / as %2F, @ as %40) or set a password with letters and numbers only."
+        )
+    return ""
 
 
 def database_url() -> str:
@@ -112,15 +147,16 @@ def _connect(url: str):
 
 
 def _record_failure(url: str, exc: Exception) -> None:
-    global last_error
+    global last_error, last_error_hint
     last_error = type(exc).__name__
+    last_error_hint = describe_failure(exc)
     _failed_until[url] = time.monotonic() + RETRY_AFTER_FAILURE_SECONDS
     logger.warning("Chat history unavailable (%s).", type(exc).__name__)
 
 
 def _run(work, fallback):
     """Run ``work(connection)`` and return its result, or ``fallback`` on any failure."""
-    global last_error
+    global last_error, last_error_hint
     url = database_url()
     if not url or _failed_until.get(url, 0.0) > time.monotonic():
         return fallback
@@ -134,6 +170,7 @@ def _run(work, fallback):
                     _schema_ready_for.add(url)
             result = work(connection)
             last_error = None
+            last_error_hint = ""
             return result
     except Exception as exc:  # network, auth, driver: history must never break the chat
         _record_failure(url, exc)

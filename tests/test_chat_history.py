@@ -46,6 +46,25 @@ def test_an_unreachable_database_never_raises(monkeypatch):
     assert ch.last_error is not None
 
 
+def test_connection_failures_are_explained_without_leaking_secrets():
+    explain = ch.describe_failure
+    assert "password" in explain(Exception('FATAL: password authentication failed for user "postgres"'))
+    assert "Session pooler" in explain(Exception("FATAL: Tenant or user not found"))
+    assert "host name" in explain(Exception("could not translate host name to address"))
+    assert "%2F" in explain(Exception("[Errno -8] Servname not supported for ai_socktype"))
+    assert "%40" in explain(Exception("[Errno -2] Name or service not known"))
+    assert "Session pooler" in explain(Exception("connection timeout expired"))
+    assert "%2F" in explain(Exception("invalid percent-encoding in URL"))
+    assert explain(Exception("something else")) == ""
+
+
+def test_a_bad_url_sets_a_hint_and_never_echoes_the_password(monkeypatch):
+    monkeypatch.setenv("CHAT_HISTORY_DATABASE_URL", "postgresql://u:SecretPass@127.0.0.1:1/db")
+    ch.list_chats(ch.user_key("a@b.c"))
+    assert ch.last_error
+    assert "SecretPass" not in ch.last_error + ch.last_error_hint
+
+
 TEST_DB = os.getenv("TEST_DATABASE_URL")
 
 

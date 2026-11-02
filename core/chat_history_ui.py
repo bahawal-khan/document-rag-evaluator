@@ -79,8 +79,9 @@ def render_chat_sidebar() -> None:
         if chat_history.last_error:
             st.warning(
                 f"Chats cannot be saved right now: the database connection failed "
-                f"({chat_history.last_error}). Check `database_url` in the app Secrets "
-                "(password, Session pooler host), then reboot the app."
+                f"({chat_history.last_error}). "
+                + (chat_history.last_error_hint + " " if chat_history.last_error_hint else "")
+                + "Check `database_url` in the app Secrets, then reboot the app."
             )
         active_id = st.session_state.get("active_chat_id")
         if not chats:
