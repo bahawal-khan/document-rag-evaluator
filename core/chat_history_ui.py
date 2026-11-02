@@ -23,6 +23,33 @@ def setup_chat_history(email: str | None) -> None:
     st.session_state["chat_history_key"] = key
 
 
+_DELETE_BUTTON_STYLE = """
+<style>
+[class*="st-key-delete_chat_"] button,
+[class*="st-key-delete_all_chats_button"] button {
+    color: #ff6b6b !important;
+    background: rgba(255, 107, 107, 0.14) !important;
+    border: 1px solid rgba(255, 107, 107, 0.65) !important;
+}
+[class*="st-key-delete_chat_"] button {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    min-width: 0 !important;
+}
+[class*="st-key-delete_chat_"] button p { font-size: 1.4rem; line-height: 1; }
+[class*="st-key-delete_chat_"] button:hover,
+[class*="st-key-delete_all_chats_button"] button:hover:not(:disabled) {
+    color: #ffffff !important;
+    background: #e5484d !important;
+    border-color: #e5484d !important;
+}
+[class*="st-key-delete_all_chats_button"] button:disabled {
+    opacity: 0.55;
+}
+</style>
+"""
+
+
 def _start_new_chat() -> None:
     st.session_state["messages"] = []
     st.session_state.pop("active_chat_id", None)
@@ -66,6 +93,7 @@ def render_chat_sidebar() -> None:
 
     key = st.session_state["chat_history_key"]
     with st.expander("💬 Saved chats"):
+        st.markdown(_DELETE_BUTTON_STYLE, unsafe_allow_html=True)
         if st.button("➕ New chat", key="new_chat_button", width="stretch"):
             _start_new_chat()
             st.rerun()
@@ -88,7 +116,7 @@ def render_chat_sidebar() -> None:
             st.caption("No saved chats yet. Your questions and answers are saved here automatically.")
 
         for chat in chats:
-            open_column, delete_column = st.columns([5, 1])
+            open_column, delete_column = st.columns([4, 1])
             label = ("● " if chat["id"] == active_id else "") + chat["title"]
             if open_column.button(label, key=f"open_chat_{chat['id']}", width="stretch"):
                 messages = chat_history.load_messages(key, chat["id"])
@@ -98,7 +126,7 @@ def render_chat_sidebar() -> None:
                     st.session_state["messages"] = messages
                     st.session_state["active_chat_id"] = chat["id"]
                     st.rerun()
-            if delete_column.button("🗑", key=f"delete_chat_{chat['id']}", help="Delete this chat"):
+            if delete_column.button("×", key=f"delete_chat_{chat['id']}", help="Delete this chat"):
                 chat_history.delete_chat(key, chat["id"])
                 if chat["id"] == active_id:
                     _start_new_chat()
